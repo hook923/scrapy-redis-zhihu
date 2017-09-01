@@ -1,0 +1,160 @@
+在该爬虫项目的根目录创建一个main.py，然后在pycharm设置下运行路径
+那么就不用每次都运行上面那行代码，直接运行main.py就能启动爬虫了
+输入代码：
+from scrapy import cmdline+
+
+cmdline.execute('scrapy crawl amazon_products -o items.csv -t csv'.split())
+＃－o 代表输出文件 －t 代表文件格式
+
+
+使用telnet查看组件的利用率
+
+Scrapy运行的有telnet服务，我们可以通过这个功能来得到一些性能指标。通过telnet命令连接到6023端口，然后就会得到一个在爬虫内部环境的Python命令行。要小心的是，如果你在这里运行了一些阻塞的操作，比如time.sleep()，正在运行的爬虫就会被中止。通过内建的est()函数可以打印出一些性能指标。
+打开第一个命令行，运行以下代码：
+$ telnet localhost 6023
+详见https://piaosanlang.gitbooks.io/spiders/04day/shi-yong-telnet-cha-kan-zu-jian-de-li-yong-lv.html
+
+首先先要回答一个问题。
+问：把网站装进爬虫里，总共分几步？
+答案很简单，四步：
+新建项目 (Project)：新建一个新的爬虫项目
+明确目标（Items）：明确你想要抓取的目标
+制作爬虫（Spider）：制作爬虫开始爬取网页
+存储内容（Pipeline）：设计管道存储爬取内容
+
+好的，基本流程既然确定了，那接下来就一步一步的完成就可以了。
+
+1.新建项目（Project）
+在空目录下按住Shift键右击，选择“在此处打开命令窗口”，输入一下命令：
+scrapy startproject zhuanlan_zhihu 
+
+其中，zhuanlan_zhihu 为项目名称。
+可以看到将会创建一个zhuanlan_zhihu 文件夹，简单介绍一下各个文件的作用：
+scrapy.cfg：项目的配置文件
+zhuanlan_zhihu /：项目的Python模块，将会从这里引用代码
+zhuanlan_zhihu /items.py：项目的items文件
+zhuanlan_zhihu /pipelines.py：项目的pipelines文件
+zhuanlan_zhihu /settings.py：项目的设置文件
+zhuanlan_zhihu /spiders/：存储爬虫的目录
+
+2.明确目标（Item）
+在Scrapy中，items是用来加载抓取内容的容器，有点像Python中的Dic，也就是字典，但是提供了一些额外的保护减少错误。
+一般来说，item可以用scrapy.item.Item类来创建，并且用scrapy.item.Field对象来定义属性（可以理解成类似于ORM的映射关系）。
+接下来，我们开始来构建item模型（model）。
+首先，我们想要的内容有：
+名称（name）
+链接（url）
+描述（description）
+
+修改zhuanlan_zhihu 目录下的items.py文件，在原本的class后面添加我们自己的class。
+因为要抓dmoz.org网站的内容，所以我们可以将其命名为DmozItem：
+# Define here the models for your scraped items  
+#  
+# See documentation in:  
+# http://doc.scrapy.org/en/latest/topics/items.html  
+  
+from scrapy.item import Item, Field  
+  
+class TutorialItem(Item):  
+    # define the fields for your item here like:  
+    # name = Field()  
+    pass  
+  
+class DmozItem(Item):  
+    title = Field()  
+    link = Field()  
+    desc = Field()  
+刚开始看起来可能会有些看不懂，但是定义这些item能让你用其他组件的时候知道你的 items到底是什么。
+可以把Item简单的理解成封装好的类对象。
+3.制作爬虫（Spider）
+制作爬虫，总体分两步：先爬再取。
+也就是说，首先你要获取整个网页的所有内容，然后再取出其中对你有用的部分。
+3.1爬
+Spider是用户自己编写的类，用来从一个域（或域组）中抓取信息。
+他们定义了用于下载的URL列表、跟踪链接的方案、解析网页内容的方式，以此来提取items。
+要建立一个Spider，你必须用scrapy.spider.BaseSpider创建一个子类，并确定三个强制的属性：
+name：爬虫的识别名称，必须是唯一的，在不同的爬虫中你必须定义不同的名字。
+start_urls：爬取的URL列表。爬虫从这里开始抓取数据，所以，第一次下载的数据将会从这些urls开始。其他子URL将会从这些起始URL中继承性生成。
+parse()：解析的方法，调用的时候传入从每一个URL传回的Response对象作为唯一参数，负责解析并匹配抓取的数据(解析为item)，跟踪更多的URL。
+ 
+这里可以参考宽度爬虫教程中提及的思想来帮助理解，教程传送：[Java] 知乎下巴第5集：使用HttpClient工具包和宽度爬虫。
+也就是把Url存储下来并依此为起点逐步扩散开去，抓取所有符合条件的网页Url存储起来继续爬取。
+
+
+下面我们来写第一只爬虫，命名为dmoz_spider.py，保存在tutorial\spiders目录下。
+dmoz_spider.py代码如下：
+from scrapy.spider import Spider  
+  
+class DmozSpider(Spider):  
+    name = "dmoz"  
+    allowed_domains = ["dmoz.org"]  
+    start_urls = [  
+        "http://www.dmoz.org/Computers/Programming/Languages/Python/Books/",  
+        "http://www.dmoz.org/Computers/Programming/Languages/Python/Resources/"  
+    ]  
+  
+    def parse(self, response):  
+        filename = response.url.split("/")[-2]  
+        open(filename, 'wb').write(response.body)  
+allow_domains是搜索的域名范围，也就是爬虫的约束区域，规定爬虫只爬取这个域名下的网页。
+从parse函数可以看出，将链接的最后两个地址取出作为文件名进行存储。
+然后运行一下看看，在tutorial目录下按住shift右击，在此处打开命令窗口，输入：
+scrapy crawl dmoz 
+运行结果如图：
+报错了：
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xb0 in position 1: ordinal not in range(128)
+运行第一个Scrapy项目就报错，真是命运多舛。
+应该是出了编码问题，谷歌了一下找到了解决方案：
+在python的Lib\site-packages文件夹下新建一个sitecustomize.py：
+import sys    
+sys.setdefaultencoding('gb2312') 
+再次运行，OK，问题解决了，看一下结果：
+最后一句INFO: Closing spider (finished)表明爬虫已经成功运行并且自行关闭了。
+包含 [dmoz]的行 ，那对应着我们的爬虫运行的结果。
+可以看到start_urls中定义的每个URL都有日志行。
+还记得我们的start_urls吗？
+http://www.dmoz.org/Computers/Programming/Languages/Python/Books
+http://www.dmoz.org/Computers/Programming/Languages/Python/Resources
+因为这些URL是起始页面，所以他们没有引用(referrers)，所以在它们的每行末尾你会看到 (referer: <None>)。
+在parse 方法的作用下，两个文件被创建：分别是 Books 和 Resources，这两个文件中有URL的页面内容。
+
+那么在刚刚的电闪雷鸣之中到底发生了什么呢？
+首先，Scrapy为爬虫的 start_urls属性中的每个URL创建了一个 scrapy.http.Request 对象 ，并将爬虫的parse 方法指定为回调函数。
+然后，这些 Request被调度并执行，之后通过parse()方法返回scrapy.http.Response对象，并反馈给爬虫。
+
+3.2取
+爬取整个网页完毕，接下来的就是的取过程了。
+光存储一整个网页还是不够用的。
+在基础的爬虫里，这一步可以用正则表达式来抓。
+在Scrapy里，使用一种叫做 XPath selectors的机制，它基于 XPath表达式。
+如果你想了解更多selectors和其他机制你可以查阅资料：点我点我
+
+这是一些XPath表达式的例子和他们的含义
+/html/head/title: 选择HTML文档<head>元素下面的<title> 标签。
+/html/head/title/text(): 选择前面提到的<title> 元素下面的文本内容
+//td: 选择所有 <td> 元素
+//div[@class="mine"]: 选择所有包含 class="mine" 属性的div 标签元素
+以上只是几个使用XPath的简单例子，但是实际上XPath非常强大。
+可以参照W3C教程：点我点我。
+
+为了方便使用XPaths，Scrapy提供XPathSelector 类，有两种可以选择，HtmlXPathSelector(HTML数据解析)和XmlXPathSelector(XML数据解析)。
+必须通过一个 Response 对象对他们进行实例化操作。
+你会发现Selector对象展示了文档的节点结构。因此，第一个实例化的selector必与根节点或者是整个目录有关 。
+在Scrapy里面，Selectors 有四种基础的方法（点击查看API文档）：
+xpath()：返回一系列的selectors，每一个select表示一个xpath参数表达式选择的节点
+css()：返回一系列的selectors，每一个select表示一个css参数表达式选择的节点
+extract()：返回一个unicode字符串，为选中的数据
+re()：返回一串一个unicode字符串，为使用正则表达式抓取出来的内容
+
+3.3xpath实验
+下面我们在Shell里面尝试一下Selector的用法。
+实验的网址：http://www.dmoz.org/Computers/Programming/Languages/Python/Books/
+熟悉完了实验的小白鼠，接下来就是用Shell爬取网页了。
+进入到项目的顶层目录，也就是第一层tutorial文件夹下，在cmd中输入：
+scrapy shell http://www.dmoz.org/Computers/Programming/Languages/Python/Books/
+
+在Shell载入后，你将获得response回应，存储在本地变量 response中。
+所以如果你输入response.body，你将会看到response的body部分，也就是抓取到的页面内容：
+
+
+
